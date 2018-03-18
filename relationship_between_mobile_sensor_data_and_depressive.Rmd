@@ -1,0 +1,988 @@
+---
+title: "weekday_weekend_10"
+author: "Min Hyung Lee"
+date: "2017년 5월 24일"
+output: html_document
+---
+
+## Data Preprocessing about Survey
+
+```{r phq9 survey}
+setwd("C:/Users/Lee Min Hyung/Desktop/dataset.tar/dataset/dataset/survey")
+
+phq9 <- read.csv("PHQ-9.csv", stringsAsFactors = FALSE)
+
+str(phq9)
+
+phq9_ans <- subset(phq9, select = -Response)
+
+## Q&A <- give weight the answer
+
+## Not at all : 0
+## several days : 1
+## More than half the days : 2
+## Nearly every day : 4
+
+colnames(phq9_ans) <- c("uid", "type", "Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9")
+phq9_ans[phq9_ans == "Not at all"] <- 0
+phq9_ans[phq9_ans == "Several days"] <- 1
+phq9_ans[phq9_ans == "More than half the days"] <- 2
+phq9_ans[phq9_ans == "Nearly every day"] <- 4
+
+phq9_ans[phq9_ans == "pre"] <- "Baseline"
+phq9_ans[phq9_ans == "post"] <- "Follow_up"
+
+phq9_ans$Q1 <- as.numeric(phq9_ans$Q1)
+phq9_ans$Q2 <- as.numeric(phq9_ans$Q2)
+phq9_ans$Q3 <- as.numeric(phq9_ans$Q3)
+phq9_ans$Q4 <- as.numeric(phq9_ans$Q4)
+phq9_ans$Q5 <- as.numeric(phq9_ans$Q5)
+phq9_ans$Q6 <- as.numeric(phq9_ans$Q6)
+phq9_ans$Q7 <- as.numeric(phq9_ans$Q7)
+phq9_ans$Q8 <- as.numeric(phq9_ans$Q8)
+phq9_ans$Q9 <- as.numeric(phq9_ans$Q9)
+
+phq9_ans$type <- as.factor(phq9_ans$type)
+
+phq9_ans$sum <- rowSums(phq9_ans[,3:11])
+
+phq9_ans_split <- split(phq9_ans, phq9_ans$type)
+
+phq9_ans_baseline <- phq9_ans_split$Baseline[c(1,12)]
+phq9_ans_followup <- phq9_ans_split$Follow_up[c(1,12)]
+
+phq9_ans_change <- merge(x = phq9_ans_followup, y = phq9_ans_baseline, by ="uid")
+
+phq9_ans_change$minus <- phq9_ans_change$sum.x - phq9_ans_change$sum.y
+phq9_ans_change <- phq9_ans_change[c(1, 4)]
+
+
+
+```
+
+# A graph about PHQ-9 Survey.
+
+```{r Figure_1}
+
+library(ggplot2)
+
+figure_1_A <- ggplot(phq9_ans_baseline, aes(x=sum)) + geom_bar(fill="dark blue") +coord_flip()
+figure_1_A + xlab("Number of Subjects") + ylab("PHQ-9 Score") + ggtitle("Baseline")
+# Figure 1. A
+
+figure_1_B <- ggplot(phq9_ans, aes(x=type, y=sum, group=uid)) + geom_point() + geom_line()
+figure_1_B + ylab("PHQ-9 Score") + ggtitle("Change")
+# Figure 1. B
+
+figure_1_C <- ggplot(phq9_ans_followup, aes(x=sum)) + geom_bar(fill="dark blue") +coord_flip()
+figure_1_C + xlab("Number of Subjects") + ylab("PHQ-9 Score") + ggtitle("Follow-up")
+# Figure 1. C
+
+```
+
+# 1. Weekday
+
+```{r features_Location Variance, message=FALSE, warning=FALSE}
+getwd()
+setwd("C:/Users/Lee Min Hyung/Desktop/dataset.tar/dataset/dataset/sensing/week10_gps/weekday")
+
+library(readr)
+
+gps_dir <- c("C:/Users/Lee Min Hyung/Desktop/dataset.tar/dataset/dataset/sensing/week10_gps/weekday")
+gps_file <- list.files(gps_dir)
+gps_file_count <- length(gps_file)
+
+# import dataset, gps sensing file
+for(i in 1:gps_file_count){
+    oname <- substr(gps_file[i], 1,13)
+    assign(oname, read_csv(paste(gps_dir,"/", gps_file[i], sep = "")))
+}
+
+# Location Variance calculate function
+location_variance <- function(x){
+    latitude_var = var(x$latitude, na.rm = T)
+    longitude_var = var(x$longitude, na.rm = T)
+    location_variance = log10(latitude_var + longitude_var)
+    return(location_variance)
+}
+
+features_10weekday_all <- data.frame()
+
+# feature_10week_all <- features data set
+
+for(i in 1:gps_file_count){
+    df <- read_csv(paste(gps_dir,"/", gps_file[i], sep = ""))
+    cc <-location_variance(df)
+    features_10weekday_all <- rbind(features_10weekday_all, c(cc))
+}
+
+names(features_10weekday_all) <- c("LocationVariance")
+
+################################################################################
+
+uid <- substr(list.files(gps_dir), 11, 13)
+uid <- as.data.frame(uid)
+features_10weekday_all <- cbind(features_10weekday_all, uid)
+features_10weekday_all <- features_10weekday_all[,c(2,1)]
+
+# cbind the "uid" to features_10weekday_all dataset.
+
+################################################################################
+
+## Speed Mean, Speed Variance, Total Distance calculate.
+user_speed <- data.frame()
+
+for(j in 1:gps_file_count){
+    x <- read_csv(paste(gps_dir,"/", gps_file[j], sep = ""))
+    k <- nrow(x) - 1
+    
+    u00_stat <- data.frame()
+    
+    for(i in 2:k){
+        v = sqrt(((x[[i,5]]-x[[i-1,5]]) / (x[[i,1]] - x[[i-1,1]]))^2 + ((x[[i,6]]-x[[i-1,6]]) / (x[[i,1]] - x[[i-1,1]]))^2)
+        
+        distance = sqrt((x[[i,5]]-x[[i-1,5]])^2 + (x[[i,6]]-x[[i-1,6]])^2)
+        
+        u00_stat <- rbind(u00_stat, c(v, distance))
+    }
+    colnames(u00_stat) <- c("V", "distance")
+    user_speed <- rbind(user_speed, c(mean(u00_stat$V), var(u00_stat$V), sum(u00_stat$distance)))
+}
+
+
+
+features_10weekday_all <- cbind(features_10weekday_all, user_speed)
+
+names(features_10weekday_all) <- c("uid", "LocationVariance", "SpeedMean", "SpeedVariance", "TotalDistance")
+
+
+```
+
+```{r clustering and features about Number of Clusters, message=FALSE, warning=FALSE}
+
+# Number of location clusters found by the adaptive k-means algorithm
+install.packages("akmeans", repos="http://cran.rstudio.com/")
+library(akmeans)
+
+set.seed(212)
+
+num_cluster <- function(x){
+    n_stationary <- subset(x, travelstate == "stationary")
+    set.seed(212)
+    adaptive_kmeans <- akmeans(n_stationary[,c("latitude", "longitude")],ths1 = 0.00005, min.k =1, max.k = 100)
+    return(nrow(adaptive_kmeans$centers))
+}
+
+
+numberCluster <- data.frame()
+
+
+for(i in 1:gps_file_count){
+    df <- read_csv(paste(gps_dir,"/", gps_file[i], sep = ""))
+    cc <- num_cluster(df)
+    numberCluster <- rbind(numberCluster, cc)
+}
+
+features_10weekday_all <- cbind(features_10weekday_all, numberCluster)
+
+names(features_10weekday_all) <- c("uid", "LocationVariance", "SpeedMean", "SpeedVariance", "TotalDistance", "NumberofClusters")
+
+
+```
+
+### Feature_Cluster_entropy calculate code
+```{r features about Entropy, message=FALSE, warning=FALSE}
+
+
+cluster_entropy <- function(x){
+    x_stationary <- subset(x, travelstate == "stationary")
+    set.seed(212)
+    adaptive_kmeans <- akmeans(x_stationary[,c("latitude", "longitude")],ths1 = 0.00005, min.k =1, max.k = 10)
+    return(adaptive_kmeans$size)
+}
+
+Entropy <- data.frame()
+
+for(j in 1:gps_file_count){
+    df <- read_csv(paste(gps_dir,"/", gps_file[j], sep = ""))
+    aa <- cluster_entropy(df)
+    aa <- prop.table(aa)
+    
+    k <- features_10weekday_all[[j,6]]
+    x = 0
+    for(i in 1:k){
+        hap <- aa[i] * log(aa[i])
+        x = x + hap
+    }
+    
+    Entropy <- rbind(Entropy, -x)
+}
+
+features_10weekday_all <- cbind(features_10weekday_all, Entropy)
+
+names(features_10weekday_all) <- c("uid", "LocationVariance", "SpeedMean", "SpeedVariance", "TotalDistance", "NumberofClusters", "Entropy")
+
+```
+
+### Feature_Normalized Entropy calculate code
+```{r Normalized Entropy}
+
+norm_entropy = features_10weekday_all$Entropy / log(features_10weekday_all$NumberofClusters)
+
+norm_entropy <- as.data.frame(norm_entropy)
+norm_entropy$norm_entropy[is.na(norm_entropy$norm_entropy)] <- 0
+
+features_10weekday_all <- cbind(features_10weekday_all, norm_entropy)
+
+names(features_10weekday_all) <- c("uid", "LocationVariance", "SpeedMean", "SpeedVariance", "TotalDistance", "NumberofClusters", "Entropy", "NormalizedEntropy")
+
+
+```
+
+### Feature_Home Stay calculate code
+Actually, it is difficult to definite home cluster. so i just determined that the biggest size of cluster is home cluster. so, there will be a little mistake with real home cluster.
+
+```{r features about Home Stay, message=FALSE, warning=FALSE}
+homestay <- function(x){
+    set.seed(212)
+    adaptive_kmeans <- akmeans(x[,c("latitude", "longitude")],ths1 = 0.00005, min.k=1)
+    return(adaptive_kmeans$size)
+}
+
+Homestay <- data.frame()
+
+for(i in 1:gps_file_count){
+    df <- read_csv(paste(gps_dir,"/", gps_file[i], sep = ""))
+    aa <- cluster_entropy(df)
+    aa <- prop.table(aa)
+    
+    home_sort <- sort(aa, decreasing = TRUE)[1]
+    
+    Homestay <- rbind(Homestay, home_sort)
+}
+
+features_10weekday_all <- cbind(features_10weekday_all, Homestay)
+
+names(features_10weekday_all) <- c("uid", "LocationVariance", "SpeedMean", "SpeedVariance", "TotalDistance", "NumberofClusters", "Entropy", "NormalizedEntropy", "HomeStay")
+
+```
+
+
+```{r}
+
+####################### 완성된 featurers를 통한 분석 비교 #######################
+
+
+analysis_10weekday_baseline <- merge(x = features_10weekday_all, y = phq9_ans_baseline, by ="uid")
+analysis_10weekday_followup <- merge(x = features_10weekday_all, y = phq9_ans_followup, by ="uid")
+analysis_10weekday_change <- merge(x = features_10weekday_all, y = phq9_ans_change, by ="uid")
+
+
+aa <- cor.test(analysis_10weekday_baseline$LocationVariance, analysis_10weekday_baseline$sum)
+ab <- cor.test(analysis_10weekday_baseline$SpeedMean, analysis_10weekday_baseline$sum)
+ac <- cor.test(analysis_10weekday_baseline$SpeedVariance, analysis_10weekday_baseline$sum)
+ad <- cor.test(analysis_10weekday_baseline$TotalDistance, analysis_10weekday_baseline$sum)
+ae <- cor.test(analysis_10weekday_baseline$NumberofClusters, analysis_10weekday_baseline$sum)
+af <- cor.test(analysis_10weekday_baseline$Entropy, analysis_10weekday_baseline$sum)
+ag <- cor.test(analysis_10weekday_baseline$NormalizedEntropy, analysis_10weekday_baseline$sum)
+ah <- cor.test(analysis_10weekday_baseline$HomeStay, analysis_10weekday_baseline$sum)
+
+Baseline <- c(aa$estimate[[1]], ab$estimate[[1]], ac$estimate[[1]], ad$estimate[[1]], ae$estimate[[1]], af$estimate[[1]], ag$estimate[[1]], ah$estimate[[1]])
+
+ba <- cor.test(analysis_10weekday_followup$LocationVariance, analysis_10weekday_followup$sum)
+bb <- cor.test(analysis_10weekday_followup$SpeedMean, analysis_10weekday_followup$sum)
+bc <- cor.test(analysis_10weekday_followup$SpeedVariance, analysis_10weekday_followup$sum)
+bd <- cor.test(analysis_10weekday_followup$TotalDistance, analysis_10weekday_followup$sum)
+be <- cor.test(analysis_10weekday_followup$NumberofClusters, analysis_10weekday_followup$sum)
+bf <- cor.test(analysis_10weekday_followup$Entropy, analysis_10weekday_followup$sum)
+bg <- cor.test(analysis_10weekday_followup$NormalizedEntropy, analysis_10weekday_followup$sum)
+bh <- cor.test(analysis_10weekday_followup$HomeStay, analysis_10weekday_followup$sum)
+
+Followup <- c(ba$estimate[[1]], bb$estimate[[1]], bc$estimate[[1]], bd$estimate[[1]], be$estimate[[1]], bf$estimate[[1]], bg$estimate[[1]], bh$estimate[[1]])
+
+ca <- cor.test(analysis_10weekday_change$LocationVariance, analysis_10weekday_change$minus)
+cb <- cor.test(analysis_10weekday_change$SpeedMean, analysis_10weekday_change$minus)
+cc <- cor.test(analysis_10weekday_change$SpeedVariance, analysis_10weekday_change$minus)
+cd <- cor.test(analysis_10weekday_change$TotalDistance, analysis_10weekday_change$minus)
+ce <- cor.test(analysis_10weekday_change$NumberofClusters, analysis_10weekday_change$minus)
+cf <- cor.test(analysis_10weekday_change$Entropy, analysis_10weekday_change$minus)
+cg <- cor.test(analysis_10weekday_change$NormalizedEntropy, analysis_10weekday_change$minus)
+ch <- cor.test(analysis_10weekday_change$HomeStay, analysis_10weekday_change$minus)
+
+change <- c(ca$estimate[[1]], cb$estimate[[1]], cc$estimate[[1]], cd$estimate[[1]], ce$estimate[[1]], cf$estimate[[1]], cg$estimate[[1]], ch$estimate[[1]])
+
+Feature <- c("Location_Variance", "Speed_Mean", "Speed_Variance", "Total_Distance", "Number_of_Cluster", "Entropy", "Normalized_Entropy", "Home_Stay")
+
+analysis_10weekday_total <- cbind(Feature)
+
+analysis_10weekday_total <- cbind(analysis_10weekday_total, Baseline = round(Baseline,digits = 2), Followup = round(Followup,digits = 2), Change = round(change, digits = 2))
+
+analysis_10weekday_total
+
+```
+
+
+
+
+# 2. weekend
+```{r features_Location Variance, message=FALSE, warning=FALSE}
+getwd()
+setwd("C:/Users/Lee Min Hyung/Desktop/dataset.tar/dataset/dataset/sensing/week10_gps/weekend")
+
+library(readr)
+
+gps_dir <- c("C:/Users/Lee Min Hyung/Desktop/dataset.tar/dataset/dataset/sensing/week10_gps/weekend")
+gps_file <- list.files(gps_dir)
+gps_file_count <- length(gps_file)
+
+# import dataset, gps sensing file
+for(i in 1:gps_file_count){
+    oname <- substr(gps_file[i], 1,13)
+    assign(oname, read_csv(paste(gps_dir,"/", gps_file[i], sep = "")))
+}
+
+# Location Variance calculate function
+location_variance <- function(x){
+    latitude_var = var(x$latitude, na.rm = T)
+    longitude_var = var(x$longitude, na.rm = T)
+    location_variance = log10(latitude_var + longitude_var)
+    return(location_variance)
+}
+
+features_10weekend_all <- data.frame()
+
+# feature_10week_all <- features data set
+
+for(i in 1:gps_file_count){
+    df <- read_csv(paste(gps_dir,"/", gps_file[i], sep = ""))
+    cc <-location_variance(df)
+    features_10weekend_all <- rbind(features_10weekend_all, c(cc))
+}
+
+names(features_10weekend_all) <- c("LocationVariance")
+
+################################################################################
+
+uid <- substr(list.files(gps_dir), 11, 13)
+uid <- as.data.frame(uid)
+features_10weekend_all <- cbind(features_10weekend_all, uid)
+features_10weekend_all <- features_10weekend_all[,c(2,1)]
+
+# cbind the "uid" to features_10weekend_all dataset.
+
+################################################################################
+
+## Speed Mean, Speed Variance, Total Distance calculate.
+user_speed <- data.frame()
+
+for(j in 1:gps_file_count){
+    x <- read_csv(paste(gps_dir,"/", gps_file[j], sep = ""))
+    k <- nrow(x) - 1
+    
+    u00_stat <- data.frame()
+    
+    for(i in 2:k){
+        v = sqrt(((x[[i,5]]-x[[i-1,5]]) / (x[[i,1]] - x[[i-1,1]]))^2 + ((x[[i,6]]-x[[i-1,6]]) / (x[[i,1]] - x[[i-1,1]]))^2)
+        
+        distance = sqrt((x[[i,5]]-x[[i-1,5]])^2 + (x[[i,6]]-x[[i-1,6]])^2)
+        
+        u00_stat <- rbind(u00_stat, c(v, distance))
+    }
+    colnames(u00_stat) <- c("V", "distance")
+    user_speed <- rbind(user_speed, c(mean(u00_stat$V), var(u00_stat$V), sum(u00_stat$distance)))
+}
+
+
+
+features_10weekend_all <- cbind(features_10weekend_all, user_speed)
+
+names(features_10weekend_all) <- c("uid", "LocationVariance", "SpeedMean", "SpeedVariance", "TotalDistance")
+
+
+```
+
+```{r clustering and features about Number of Clusters, message=FALSE, warning=FALSE}
+
+# Number of location clusters found by the adaptive k-means algorithm
+install.packages("akmeans", repos="http://cran.rstudio.com/")
+library(akmeans)
+
+set.seed(212)
+
+num_cluster <- function(x){
+    n_stationary <- subset(x, travelstate == "stationary")
+    set.seed(212)
+    adaptive_kmeans <- akmeans(n_stationary[,c("latitude", "longitude")],ths1 = 0.0000085, min.k =1, max.k = 100)
+    return(nrow(adaptive_kmeans$centers))
+}
+
+
+numberCluster <- data.frame()
+
+
+for(i in 1:gps_file_count){
+    df <- read_csv(paste(gps_dir,"/", gps_file[i], sep = ""))
+    cc <- num_cluster(df)
+    numberCluster <- rbind(numberCluster, cc)
+}
+
+features_10weekend_all <- cbind(features_10weekend_all, numberCluster)
+
+names(features_10weekend_all) <- c("uid", "LocationVariance", "SpeedMean", "SpeedVariance", "TotalDistance", "NumberofClusters")
+
+
+```
+
+### Feature_Cluster_entropy calculate code
+```{r features about Entropy, message=FALSE, warning=FALSE}
+
+
+cluster_entropy <- function(x){
+    x_stationary <- subset(x, travelstate == "stationary")
+    set.seed(212)
+    adaptive_kmeans <- akmeans(x_stationary[,c("latitude", "longitude")],ths1 = 0.0000085, min.k =1, max.k = 10)
+    return(adaptive_kmeans$size)
+}
+
+Entropy <- data.frame()
+
+for(j in 1:gps_file_count){
+    df <- read_csv(paste(gps_dir,"/", gps_file[j], sep = ""))
+    aa <- cluster_entropy(df)
+    aa <- prop.table(aa)
+    
+    k <- features_10weekend_all[[j,6]]
+    x = 0
+    for(i in 1:k){
+        hap <- aa[i] * log(aa[i])
+        x = x + hap
+    }
+    
+    Entropy <- rbind(Entropy, -x)
+}
+
+features_10weekend_all <- cbind(features_10weekend_all, Entropy)
+
+names(features_10weekend_all) <- c("uid", "LocationVariance", "SpeedMean", "SpeedVariance", "TotalDistance", "NumberofClusters", "Entropy")
+
+```
+
+### Feature_Normalized Entropy calculate code
+```{r Normalized Entropy}
+
+norm_entropy = features_10weekend_all$Entropy / log(features_10weekend_all$NumberofClusters)
+
+norm_entropy <- as.data.frame(norm_entropy)
+norm_entropy$norm_entropy[is.na(norm_entropy$norm_entropy)] <- 0
+
+features_10weekend_all <- cbind(features_10weekend_all, norm_entropy)
+
+names(features_10weekend_all) <- c("uid", "LocationVariance", "SpeedMean", "SpeedVariance", "TotalDistance", "NumberofClusters", "Entropy", "NormalizedEntropy")
+
+
+```
+
+### Feature_Home Stay calculate code
+Actually, it is difficult to definite home cluster. so i just determined that the biggest size of cluster is home cluster. so, there will be a little mistake with real home cluster.
+
+```{r features about Home Stay, message=FALSE, warning=FALSE}
+homestay <- function(x){
+    set.seed(212)
+    adaptive_kmeans <- akmeans(x[,c("latitude", "longitude")],ths1 = 0.0000085, min.k=1)
+    return(adaptive_kmeans$size)
+}
+
+Homestay <- data.frame()
+
+for(i in 1:gps_file_count){
+    df <- read_csv(paste(gps_dir,"/", gps_file[i], sep = ""))
+    aa <- cluster_entropy(df)
+    aa <- prop.table(aa)
+    
+    home_sort <- sort(aa, decreasing = TRUE)[1]
+    
+    Homestay <- rbind(Homestay, home_sort)
+}
+
+features_10weekend_all <- cbind(features_10weekend_all, Homestay)
+
+names(features_10weekend_all) <- c("uid", "LocationVariance", "SpeedMean", "SpeedVariance", "TotalDistance", "NumberofClusters", "Entropy", "NormalizedEntropy", "HomeStay")
+
+```
+
+
+```{r}
+
+####################### 완성된 featurers를 통한 분석 비교 #######################
+
+
+analysis_10weekend_baseline <- merge(x = features_10weekend_all, y = phq9_ans_baseline, by ="uid")
+analysis_10weekend_followup <- merge(x = features_10weekend_all, y = phq9_ans_followup, by ="uid")
+analysis_10weekend_change <- merge(x = features_10weekend_all, y = phq9_ans_change, by ="uid")
+
+
+aa <- cor.test(analysis_10weekend_baseline$LocationVariance, analysis_10weekend_baseline$sum)
+ab <- cor.test(analysis_10weekend_baseline$SpeedMean, analysis_10weekend_baseline$sum)
+ac <- cor.test(analysis_10weekend_baseline$SpeedVariance, analysis_10weekend_baseline$sum)
+ad <- cor.test(analysis_10weekend_baseline$TotalDistance, analysis_10weekend_baseline$sum)
+ae <- cor.test(analysis_10weekend_baseline$NumberofClusters, analysis_10weekend_baseline$sum)
+af <- cor.test(analysis_10weekend_baseline$Entropy, analysis_10weekend_baseline$sum)
+ag <- cor.test(analysis_10weekend_baseline$NormalizedEntropy, analysis_10weekend_baseline$sum)
+ah <- cor.test(analysis_10weekend_baseline$HomeStay, analysis_10weekend_baseline$sum)
+
+Baseline <- c(aa$estimate[[1]], ab$estimate[[1]], ac$estimate[[1]], ad$estimate[[1]], ae$estimate[[1]], af$estimate[[1]], ag$estimate[[1]], ah$estimate[[1]])
+
+ba <- cor.test(analysis_10weekend_followup$LocationVariance, analysis_10weekend_followup$sum)
+bb <- cor.test(analysis_10weekend_followup$SpeedMean, analysis_10weekend_followup$sum)
+bc <- cor.test(analysis_10weekend_followup$SpeedVariance, analysis_10weekend_followup$sum)
+bd <- cor.test(analysis_10weekend_followup$TotalDistance, analysis_10weekend_followup$sum)
+be <- cor.test(analysis_10weekend_followup$NumberofClusters, analysis_10weekend_followup$sum)
+bf <- cor.test(analysis_10weekend_followup$Entropy, analysis_10weekend_followup$sum)
+bg <- cor.test(analysis_10weekend_followup$NormalizedEntropy, analysis_10weekend_followup$sum)
+bh <- cor.test(analysis_10weekend_followup$HomeStay, analysis_10weekend_followup$sum)
+
+Followup <- c(ba$estimate[[1]], bb$estimate[[1]], bc$estimate[[1]], bd$estimate[[1]], be$estimate[[1]], bf$estimate[[1]], bg$estimate[[1]], bh$estimate[[1]])
+
+ca <- cor.test(analysis_10weekend_change$LocationVariance, analysis_10weekend_change$minus)
+cb <- cor.test(analysis_10weekend_change$SpeedMean, analysis_10weekend_change$minus)
+cc <- cor.test(analysis_10weekend_change$SpeedVariance, analysis_10weekend_change$minus)
+cd <- cor.test(analysis_10weekend_change$TotalDistance, analysis_10weekend_change$minus)
+ce <- cor.test(analysis_10weekend_change$NumberofClusters, analysis_10weekend_change$minus)
+cf <- cor.test(analysis_10weekend_change$Entropy, analysis_10weekend_change$minus)
+cg <- cor.test(analysis_10weekend_change$NormalizedEntropy, analysis_10weekend_change$minus)
+ch <- cor.test(analysis_10weekend_change$HomeStay, analysis_10weekend_change$minus)
+
+change <- c(ca$estimate[[1]], cb$estimate[[1]], cc$estimate[[1]], cd$estimate[[1]], ce$estimate[[1]], cf$estimate[[1]], cg$estimate[[1]], ch$estimate[[1]])
+
+Feature <- c("Location_Variance", "Speed_Mean", "Speed_Variance", "Total_Distance", "Number_of_Cluster", "Entropy", "Normalized_Entropy", "Home_Stay")
+
+analysis_10weekend_total <- cbind(Feature)
+
+analysis_10weekend_total <- cbind(analysis_10weekend_total, Baseline = round(Baseline,digits = 2), Followup = round(Followup,digits = 2), Change = round(change, digits = 2))
+
+analysis_10weekend_total
+
+```
+
+
+
+
+
+
+```{r, eval=FALSE, include=FALSE}
+
+#json file
+install.packages("jsonlite")
+library(jsonlite)
+setwd("C:/Users/Lee Min Hyung/Downloads/dataset.tar/dataset/dataset/EMA")
+data = fromJSON("EMA_definition.json")
+data=data.frame(data)
+
+#unix time convert
+as.Date(as.POSIXct(u00$time, origin="1970-01-01"))
+
+u00$time <- as.Date(as.POSIXct(u00$time, origin="1970-01-01"))
+u01$time <- as.Date(as.POSIXct(u01$time, origin="1970-01-01"))
+
+## 요일 반환
+install.packages("lubridate")
+library(lubridate)
+Sys.setlocale("LC_TIME", "C")
+
+wday(as.Date(as.POSIXct(1367999097, origin="1970-01-01")))
+# Sunday: 1 ~ Saturday: 7
+
+
+#############################
+# try.... fail
+for(i in gps_dir){
+i[1] <<-as.Date(as.POSIXct(i[1], origin="1970-01-01"))
+}
+
+
+#############################
+#try.... fail
+
+for(i in gps_3_variance){
+    location_variance(i)
+}
+
+for(i in gps_3_variance){
+write.csv(i, file = paste(gps_dir,"/", gps_3_variance[i]), append = TRUE, quote = FALSE, sep = "")
+}
+############################
+
+
+## k-means
+
+test_gps_u00 <- subset(gps_u00, travelstate == "stationary")
+
+test <- kmeans(test_gps_u00[,c("latitude", "longitude")], 1)
+test8<- kmeans(test_gps_u00[,c("latitude", "longitude")], 8)
+
+
+####################### k-means... optimize k find #######################
+
+install.packages("NbClust")
+library(NbClust)
+
+
+## NbClust packages
+nc <- NbClust(training.data, min.nc=2, max.nc=15, method="kmeans")
+par(mfrow=c(1,1))
+barplot(table(nc$Best.n[1,]),
+ xlab="Numer of Clusters", ylab="Number of Criteria",
+ main="Number of Clusters Chosen")
+
+## some of squares
+wssplot <- function(data, nc=15, seed=212){
+  wss <- (nrow(data)-1)*sum(apply(data,2,var))
+  for (i in 2:nc){
+    set.seed(seed)
+    wss[i] <- sum(kmeans(data, centers=i)$withinss)}
+  plot(1:nc, wss, type="b", xlab="Number of Clusters",
+       ylab="Within groups sum of squares")}
+
+wssplot(training.data)
+
+####################### 완성된 featurers를 통한 분석 비교 #######################
+setwd("C:/Users/Lee Min Hyung/Desktop/data")
+curious <- read.csv("features_10week_all.csv")
+bb <- phq9_ans_followup
+names(bb) <- c("id")
+ab <- merge(x = curious, y = bb, by="id")
+ab <- ab[c(1,2,3,4,5,6,7,8,9,10,11,12,13,23)]
+cor.test(ab$NumberofClusters, ab$NA.10)
+
+################################################################################
+
+# 연습...
+aa <- features_10week_all
+bb <- phq9_ans_baseline
+ab <- merge(x = aa, y = bb, by="uid")
+ab <- ab[c(1,2,3,4,5,16)]
+
+ab_lm <- lm(sum ~ LocationVariance, data = ab)
+summary(ab_lm)
+cor.test(ab$TotalDistance, ab$sum)
+
+
+aa <- features_10week_all
+bb <- phq9_ans_followup
+ab <- merge(x = aa, y = bb, by="uid")
+ab <- ab[c(1,2,3,4,5,6,17)]
+cor.test(ab$NumberofCluster, ab$sum)
+
+ -> -0.4376051
+
+
+```
+
+
+
+```{r, eval=FALSE, include=FALSE}
+head(as.Date(as.POSIXct(gps_u00$time, origin="1970-01-01")))
+
+
+
+gps_week10_dir <- c("C:/Users/Lee Min Hyung/Desktop/dataset.tar/dataset/dataset/sensing/week10_gps")
+gps_week10_file <- list.files(gps_week10_dir)
+
+
+
+
+weekday_cc <- data.frame()
+weekend_cc <- data.frame()
+
+
+todate <- function(x){
+    x$date <- as.Date(as.POSIXct(x$time, origin="1970-01-01"))
+}
+
+
+setwd("C:/Users/Lee Min Hyung/Desktop/dataset.tar/dataset/dataset/sensing/week10_gps/weekday")
+
+for(i in 1: gps_file_count){
+    setwd("C:/Users/Lee Min Hyung/Desktop/dataset.tar/dataset/dataset/sensing/week10_gps/weekday")
+    df <- read_csv(paste("weekday10_",substr(gps_file[i], 5,7), ".csv",sep = ""))
+    df$date <- as.Date(as.POSIXct(df$time, origin="1970-01-01"))
+}
+
+
+{
+weekday_1 <- function(x,y){
+    y <- subset(x, as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-03-27" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-03-28" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-03-29" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-01" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-02" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-03" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-04" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-05")
+    return(assign(paste(y,"_1"), y))
+}
+
+
+weekday_2 <- function(x,y){
+    y <- subset(x, as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-01" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-02" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-03" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-04" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-05" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-08" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-09" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-10" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-11" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-12")
+    return(assign(paste(y,"_2"), y))
+}
+
+weekday_3 <- function(x,y){
+    y <- subset(x, as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-08" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-09" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-10" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-11" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-12" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-15" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-16" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-17" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-18" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-19")
+    return(assign(paste(y,"_3"), y))
+}
+
+weekday_4 <- function(x,y){
+    y <- subset(x, as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-15" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-16" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-17" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-18" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-19" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-22" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-23" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-24" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-25" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-26")
+    return(assign(paste(y,"_4"), y))
+}
+
+weekday_5 <- function(x,y){
+    y <- subset(x, as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-22" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-23" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-24" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-25" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-26" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-29" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-30" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-01" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-02" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-03")
+    return(assign(paste(y,"_5"), y))
+}
+
+weekday_6 <- function(x,y){
+    y <- subset(x, as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-29" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-30" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-01" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-02" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-03" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-06" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-07" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-08" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-09" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-10")
+    return(assign(paste(y,"_6"), y))
+}
+
+weekday_7 <- function(x,y){
+    y <- subset(x, as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-06" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-07" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-08" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-09" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-10" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-13" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-14" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-15" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-16" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-17")
+    return(assign(paste(y,"_7"), y))
+}
+
+weekday_8 <- function(x,y){
+    y <- subset(x, as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-13" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-14" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-15" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-16" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-17" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-20" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-21" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-22" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-23" | as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-24")
+    return(assign(paste(y,"_8"), y))
+}
+}
+
+
+
+
+
+for(i in 1:gps_file_count){
+    plz <- read_csv(paste"C:/Users/Lee Min Hyung/Desktop/dataset.tar/dataset/dataset/sensing/week2_gps/weekday", "/weekday10_",substr(gps_file[i], 5,7),".csv", sep = ""))
+    
+    pname <- paste("weekday2_",substr(gps_file[i], 5,7),sep = "")
+    weekday_1(plz, pname)
+    weekday_2(plz, pname)
+    weekday_3(plz, pname)
+    weekday_4(plz, pname)
+    weekday_5(plz, pname)
+    weekday_6(plz, pname)
+    weekday_7(plz, pname)
+    weekday_8(plz, pname)
+}
+
+
+    write.csv(weekday_split(plz, pname), paste("C:/Users/Lee Min Hyung/Desktop/dataset.tar/dataset/dataset/sensing/week2_gps/weekday", "/weekday2_",substr(gps_file[i], 5,7),".csv", sep = ""), row.names = FALSE)
+
+
+for(i in 1:gps_file_count){
+    plz <- read_csv(paste(gps_dir,"/", gps_file[i], sep = ""))
+    
+    oname <- paste("weekend10_",substr(gps_file[i], 5,7), sep = "")
+    assign(oname, weekend_split(plz, oname))
+    write.csv(weekend_split(plz, oname), paste("C:/Users/Lee Min Hyung/Desktop/dataset.tar/dataset/dataset/sensing/week2_gps/weekend", "/weekend10_",substr(gps_file[i], 5,7),".csv", sep = ""), row.names = FALSE)
+    
+    pname <- paste("weekday10_",substr(gps_file[i], 5,7), sep = "")
+    assign(pname, weekday_split(plz, pname))
+    write.csv(weekday_split(plz, pname), paste("C:/Users/Lee Min Hyung/Desktop/dataset.tar/dataset/dataset/sensing/week2_gps/weekday", "/weekday10_",substr(gps_file[i], 5,7),".csv", sep = ""), row.names = FALSE)
+}
+
+weekday_split <- function(x,y){
+    y <- subset(x, wday(as.Date(as.POSIXct(x$time, origin="1970-01-01"))) >= 2 & wday(as.Date(as.POSIXct(x$time, origin="1970-01-01"))) <= 6)
+    return(y)
+}
+
+
+for(i in 1:gps_file_count){
+    oname <- paste("weekend10_",substr(gps_file[i], 5,7), sep = "")
+    assign(oname, subset)
+
+
+
+
+weekday10_u59$date <- as.Date(as.POSIXct(weekday10_u59$time, origin="1970-01-01"))
+
+
+
+
+setwd("C:/Users/Lee Min Hyung/Desktop/dataset.tar/dataset/dataset/sensing/week10_gps/weekday")
+
+for(i in 1:gps_file_count){
+  setwd("C:/Users/Lee Min Hyung/Desktop/dataset.tar/dataset/dataset/sensing/week10_gps/weekday")
+    df <- read_csv(paste("weekday10_",substr(gps_file[i], 5,7), ".csv",sep = ""))
+    weekday_cc <- rbind(weekday_cc, weekday2_func(df))
+}  
+
+for(i in 1:gps_file_count){
+  setwd("C:/Users/Lee Min Hyung/Desktop/dataset.tar/dataset/dataset/sensing/week10_gps/weekend")
+    df2 <- read_csv(paste("weekend10_",substr(gps_file[i], 5,7), ".csv",sep = ""))
+    weekend_cc <- rbind(weekend_cc, weekend2_func(df2))
+}
+
+
+oname <- paste("weekend10_",substr(gps_file[i], 5,7), sep = "")
+
+
+
+
+weekday2_func <- function(x){
+    cc <- c(which(as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-03-27")[1],
+    which(as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-01")[1],
+    which(as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-08")[1],
+    which(as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-15")[1],
+    which(as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-22")[1],
+    which(as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-29")[1],
+    which(as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-06")[1],
+    which(as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-13")[1],
+    which(as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-20")[1],
+    
+    which(as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-27")[1])
+    return(cc)
+}
+
+
+weekend2_func <- function(x){
+    cc <- c(which(as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-03-30")[1],
+    which(as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-06")[1],
+    which(as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-13")[1],
+    which(as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-20")[1],
+    which(as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-27")[1],
+    which(as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-04")[1],
+    which(as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-11")[1],
+    which(as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-18")[1],
+    which(as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-25")[1],
+    which(as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-06-01")[1])
+    return(cc)
+}
+
+
+
+
+
+
+{
+cc <<- weekday2_func(weekday10_u00)
+
+    small <- paste("weekday10_", substr(gps_file[32], 11,13),sep = "")
+    assign(paste(small,"_1", sep = ""), weekday10_u00[cc[1]:cc[3]-1,])
+    assign(paste(small,"_2", sep = ""), weekday10_u39[cc[2]:cc[4]-1,])
+    assign(paste(small,"_3", sep = ""), weekday10_u39[cc[3]:cc[5]-1,])
+    assign(paste(small,"_4", sep = ""), weekday10_u39[cc[4]:cc[6]-1,])
+    assign(paste(small,"_5", sep = ""), weekday10_u39[cc[5]:cc[7]-1,])
+    assign(paste(small,"_6", sep = ""), weekday10_u39[cc[6]:cc[8]-1,])
+    assign(paste(small,"_7", sep = ""), weekday10_u39[cc[7]:cc[9]-1,])
+    assign(paste(small,"_8", sep = ""), weekday10_u39[cc[8]:cc[10]-1,])
+}
+    
+    
+
+
+weekend2_func <- function(x){
+    cc <- c(which(as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-03-30")[1],
+    which(as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-06")[1],
+    which(as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-13")[1],
+    which(as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-20")[1],
+    which(as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-04-27")[1],
+    which(as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-04")[1],
+    which(as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-11")[1],
+    which(as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-18")[1],
+    which(as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-05-25")[1],
+    which(as.Date(as.POSIXct(x$time, origin="1970-01-01")) == "2013-06-01")[1])
+    return(cc)
+}
+
+
+
+
+cc <<- weekend2_func(weekend10_u00)
+
+
+
+weekend2_assign <- function(x){
+    cc <<- weekend2_func(x)
+    small <- paste("weekend10_", substr(gps_file[1], 11,13),sep = "")
+        
+    assign(paste(small,"_1", sep = ""), x[cc[1]:cc[3]-1,])
+    assign(paste(small,"_2", sep = ""), x[cc[2]:cc[4]-1,])
+    assign(paste(small,"_3", sep = ""), x[cc[3]:cc[5]-1,])
+    assign(paste(small,"_4", sep = ""), x[cc[4]:cc[6]-1,])
+    assign(paste(small,"_5", sep = ""), x[cc[5]:cc[7]-1,])
+    assign(paste(small,"_6", sep = ""), x[cc[6]:cc[8]-1,])
+    assign(paste(small,"_7", sep = ""), x[cc[7]:cc[9]-1,])
+    assign(paste(small,"_8", sep = ""), x[cc[8]:cc[10]-1,])
+}
+
+weekend2_assign(weekend10_u00)
+
+
+
+
+for(j in 1:9){
+        oname <- df[c(weekday2_func(df)[j]:weekday2_func(df)[j+1]),]
+        pname <- df[c(weekend2_func(df2)[j]:weekend2_func(df2)[j+1]),]
+    }
+```
+
+
+
+```{r clustering, eval=FALSE, include=FALSE}
+
+# calculate two points with latitude and longitude
+
+d_long = longitude_2 - longitude_1
+d_lat = latitude_2 - latitude_1
+
+a = sin(d_lat/2) * sin(d_lat/2) + cos(latitude_1) * cos(latitude_2) * sin(d_long/2) * sin(d_long/2)
+
+c = 2 * atan(sqrt(a)/sqrt(1-a))
+
+d = r * c
+
+r = 지구의 반지름 = 6371km
+ -> in the clustering, threshold is 0.5km
+ clusters centroid & farthest point distance should be lower than 0.5km
+ so, calculate d, and compare.
+ #######################################################################
+
+distance_twodot <- function(lat_1, long_1, lat_2, long_2){
+    d_lat = lat_2 - lat_1
+    d_long = long_2 - long_1
+    
+    a = sin(d_lat/2) * sin(d_lat/2) + cos(lat_1) * cos(lat_2) * sin(d_long/2) * sin(d_long/2)
+    c = 2 * atan(sqrt(a)/sqrt(1-a))
+    r = 6371
+    
+    d = r * c
+    
+    return(d)
+}
+
+
+
+```
+
+
+```{r, eval=FALSE, include=FALSE}
+# k-Means clustering
+
+
+# test_gps_u00 <- subset(gps_u00, travelstate == "stationary")
+
+# test <- kmeans(test_gps_u00[,c("latitude", "longitude")], 1)
+# test8<- kmeans(test_gps_u00[,c("latitude", "longitude")], 8)
+
+
+# leader_cluster
+# leader <- leaderCluster(points, radius = 0.5,  weights = rep(1, nrow(pointa)), max_iter = 10L, distance = c("Lp", "L1", "L2", "Linf", "haversine"), p = 2)
+
+
+
+# install.packages("leaderCluster")
+# library(leaderCluster)
+
+# leader <- leaderCluster(test_gps_u00[,c("latitude", "longitude")], radius = 0.5, max_iter = 10L, distance = "Lp")
+
+# leader <- leaderCluster(test_gps_u51[,c("latitude", "longitude")], radius = 0.5, max_iter = 30L, distance = "Lp")
+
+#################################################################################
+```
+
