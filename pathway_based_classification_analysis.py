@@ -36,7 +36,7 @@ def pathway_overlaid(expression_data, pathway):
 
 	df_overlaid = df_overlaid.reset_index(drop=True)
 
-	df_overlaid = pd.DataFrame(df_overlaid, columns = ["GeneSymbol Name", "BS16.0001439_01319724_JM", "BS16.0012807_00192199_CY", "BS16.0017904_00497033_KH", "BS16.0023523_01360069_BE", "BS16.0023862_01269828_JE", "SNUH_PA1", "SNUH_PA2", "SNUH_PA3", "SNUH_PA4", "SNUH_PA5", "SNUH_PA6", "SNUH_PA7", "SNUH_PA8", "SNUH_PA10", "SNUH_PA11"])
+	df_overlaid = pd.DataFrame(df_overlaid, columns = ["GeneSymbol Name", "BS16JM", "BS16CY", "BS16KH", "BS16BE", "BS16JE", "SN1", "SN2", "SN3", "SN4", "SN5", "SN6", "SN7", "SN8", "SN10", "SN11"])
 
 	return df_overlaid
 
@@ -115,7 +115,7 @@ for ex_list in expression_data_list:
 	expression_data_raw = pd.read_excel("./input data/" + ex_list)
 	print(expression_data_raw)
 	# data log
-	expression_data_log = expression_data_raw[["BS16.0001439_01319724_JM", "BS16.0012807_00192199_CY", "BS16.0017904_00497033_KH", "BS16.0023523_01360069_BE", "BS16.0023862_01269828_JE", "SNUH_PA1", "SNUH_PA2", "SNUH_PA3", "SNUH_PA4", "SNUH_PA5", "SNUH_PA6", "SNUH_PA7", "SNUH_PA8", "SNUH_PA10", "SNUH_PA11"]]
+	expression_data_log = expression_data_raw[["GeneSymbol Name", "BS16JM", "BS16CY", "BS16KH", "BS16BE", "BS16JE", "SN1", "SN2", "SN3", "SN4", "SN5", "SN6", "SN7", "SN8", "SN10", "SN11"]]
 	expression_data_log = np.log(expression_data_log)
 	print(expression_data_log)
 	expression_data_mer = pd.DataFrame(expression_data_raw, columns = ["GeneSymbol Name"])
